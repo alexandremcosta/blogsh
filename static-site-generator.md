@@ -1,0 +1,233 @@
+# Static Site Generator in < 100 lines of code
+
+Just like every dev writing a blog, my first question was:
+
+> *What is the minimum set of features to maintain it comfortably?*
+
+For me, the worst part of writing plain HTML is to manage the layout on all pages.
+
+- If I change the navigation menu, I don't want to copy/paste the changes on every page of my website.
+
+- I want to write posts in Markdown.
+
+- I want to reuse certain forms, or a call to action button.
+
+- I also don't want to spend days reading a static site generator documentation.
+
+---
+
+#### Simplest Solution
+
+This solution has only the first feature I wanted: layouts.
+
+    #!/bash/sh
+    for file in *.html.post; do
+      # Replace content of layout by content of page
+      page=$(awk 'NR==FNR { a[n++]=$0; next } /{{ content }}/ { for (i=0;i<n;++i) print a[i]; next } 1' \
+    	  $page_filename $layout)
+    
+      # Write output
+      printf "%s" "$page" > "$page_filename"
+    done
+
+That's enough for simple markdown blogs, like this.
+But if you need reusable components, like a call to action or a any complex set of tags on multiple pages, you need a bit more.
+
+#### What If You Could Write
+
+    <!--- about.html --->
+
+    <partial src="partials/layout.html" page="about">
+      <h1>About me</h1>
+      <p>I am awesome!</p>
+
+      <partial src="partials/call-to-action.html">
+        Click Me!
+      </partial>
+    </partial>
+
+#### Parse
+
+    <!---  `partials/layout.html` --->
+
+    <html>
+      <head>
+	<title>My Blog</title>
+	<link href="assets/css/\{\{ page \}\}.css" rel="stylesheet">
+      </head>
+      <body>
+	    <partial src="nav.html" />
+	    \{\{ content \}\}
+      </body>
+    </html>
+
+#### And output
+
+    <html>
+      <head>
+	<title>My Blog</title>
+	<link href="assets/css/about.css" rel="stylesheet">
+      </head>
+      <body>
+	<nav></nav>
+	<h1>About me</h1>
+	<p>I am awesome!</p>
+
+	<a href="contact.html" target="_blank">
+	  Click Me!
+	</a>
+      </body>
+    </html>
+
+#### And have simple variables
+
+    author: John Doe
+    description: This is a personal blog
+    keywords: HTML, CSS, JavaScript
+
+#### That can be rendered like this
+
+    <meta name="author" content="\{\{ author \}\}">
+    <meta name="description" content="\{\{ description \}\}">
+    <meta name="keywords" content="\{\{ keywords \}\}">
+
+---
+
+#### My Simple Static Site Generator
+
+Most web frameworks implement this to help you create your web apps using reusable templates.
+
+Notice that it requires a bit more than the simple pandoc example.
+
+But we don't want to learn a new framework. Hugo, Gatsby, Wordpress, VuePress, Jekyll...Oh lord.
+
+It would take more time to choose between them than to write my own. Not even talking about reading docs.
+
+<br>
+
+So here is a small snippet to accomplish **partial templates with attributes**.
+
+It's [available on GitHub](https://github.com/alexandremcosta/alexandremcosta.github.io/blob/main/publish.js),
+together with the rest of this blog.
+
+    /*
+      Publishes all html files from templates/*.html to public/*.html.
+
+      Write the website HTML in `templates/`.
+      Each file in the root of `templates/` becomes a page of your website.
+      Each file in subfolders of `templates/` can be reused as a partial template.
+
+      Examples:
+
+      1. `{{ foo/bar.html }}` or `<partial src="foo/bar.html" />`
+	 Is replaced by the contents of `foo/bar.html`.
+
+      2. `<partial src="foo/bar.html">your content</p>`
+	 Is replaced by the contents of `foo/bar.html`.
+	 Use `{{ content }}` inside the partial to define placement of `your content`.
+
+      3. `<partial src="foo/bar.html" key="value" />`
+	Use `{{ key }}` inside the partial to define placement of `value`
+
+      4. `{{ any yaml key }}`
+	Is replaced by text.yml value.
+
+      5. `<partial src="any yaml key" foo="bar">`
+	Is replaced by text.yml value.
+	Use `{{ foo }}` inside the yaml to define placement of `bar`.
+
+      Setup:
+      - Write an HTML file in `templates/`
+      - Run `npm install`
+      - Run `node publish.js`
+      - Inspect `public/` folder
+
+      Bonus: support markdown partials, beautify generated HTML
+    */
+
+    // dependencies
+    const FS = require('fs');
+    const parse = require('node-html-parser').parse;
+    const beautify = require('js-beautify').html;
+    const loadYaml = require('js-yaml').load;
+    const showdown = require('showdown');
+    const markdown = new showdown.Converter();
+
+    // config
+    const config = {
+	    tag: 'partial',
+	    attr: 'src',
+	    inputPath: __dirname + '/templates/',
+	    outputPath: __dirname + '/public/',
+	    dictionary: loadYaml(maybeReadFile(__dirname + '/text.yml')) || {},
+	    inputFilenameRegex: new RegExp('\.html$')
+    };
+
+
+    // main
+    FS.readdirSync(config.inputPath)
+	    .filter(filename => filename.match(config.inputFilenameRegex) )
+	    .forEach(filename => {
+		    console.log(`Processing page ${filename}...`)
+
+		    const uglyHtml = processPage(filename)
+		    const beautifulHtml = beautify(uglyHtml, {indent_size: 2});
+		    const outputFilename = config.outputPath + filename;
+
+		    FS.writeFile(outputFilename, beautifulHtml, (error) => {
+			    if (error)
+				    console.error(`Cannot write output (${outputFilename})`);
+		    });
+    });
+
+    // helpers
+    function processPage(filename) {
+	    let rawHtml = maybeReadFile(config.inputPath + filename);
+	    const replacedHtml = replaceCurlyBrackets(rawHtml, config.dictionary, config.inputPath)
+	    let elem, doc = parse(replacedHtml);
+
+	    // for each partial tag, read source from file or yaml, replace its curly brackets
+	    // and replace the html tag by the final content of source.
+	    while(elem = doc.querySelector(config.tag + '[' + config.attr + ']')) {
+		    const {[config.attr]: source, ...tagDictionary} = elem.attributes;
+		    const partialDictionary = {...config.dictionary, ...tagDictionary, content: elem.innerHTML};
+		    const rawPartial = readDictionaryOrFile(source, partialDictionary, config.inputPath);
+		    const replacedPartial = replaceCurlyBrackets(rawPartial, partialDictionary, config.inputPath);
+
+		    elem.replaceWith(replacedPartial);
+	    }
+
+	    return doc.toString();
+    }
+
+    function maybeReadFile(filename) {
+	    try {
+		    const isMarkdown = (filename.substring(filename.length - 3, filename.length) == '.md');
+		    const content = FS.readFileSync(filename, 'utf8').toString();
+		    return isMarkdown ? markdown.makeHtml(content) : content;
+	    }
+	    catch(err) {
+		    console.error(`Missing file (${err.path})`);
+		    return '';
+	    }
+    }
+
+    function replaceCurlyBrackets(text, dictionary) {
+	    // match {{ any thing }} or {{ any/file.txt }}
+	    const regexp = /{{\s*[\w\.\/\s]+\s*}}/g;
+
+	    text = text.replace(regexp, replacement => {
+		    const key = replacement.substring(2, replacement.length - 2).trim();
+		    return readDictionaryOrFile(key, dictionary, config.inputPath);
+	    });
+
+	    // support escaped backslashes, for example \{\{ is replaced by {{
+	    const escapedOpenBraces = /\\\{\\\{/g;
+	    const escapedCloseBraces = /\\\}\\\}/g;
+	    return text.replace(escapedOpenBraces, "{{").replace(escapedCloseBraces, "}}");
+    }
+
+    function readDictionaryOrFile(key, dictionary) {
+	    console.log(`|_ Processing partial "${key}"`)
+	    return dictionary[key] || maybeReadFile(config.inputPath + key) || `{{ ${key} }}`;
+    }
