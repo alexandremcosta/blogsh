@@ -226,5 +226,5 @@ together with the rest of this blog.
 
     function readDictionaryOrFile(key, dictionary) {
 	    console.log(`|_ Processing partial "${key}"`)
-	    return dictionary[key] || maybeReadFile(config.inputPath + key) || `{{ ${key} }}`;
+	    return dictionary[key] || maybeReadFile(config.inputPath + key) || `${key}`;
     }
