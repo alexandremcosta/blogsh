@@ -53,11 +53,11 @@ But if you need reusable components, like a call to action or a any complex set 
     <html>
       <head>
 	<title>My Blog</title>
-	<link href="assets/css/\{\{ page \}\}.css" rel="stylesheet">
+	<link href="assets/css/{{ page }}.css" rel="stylesheet">
       </head>
       <body>
 	    <partial src="nav.html" />
-	    \{\{ content \}\}
+	    {{ content }}
       </body>
     </html>
 
@@ -87,9 +87,9 @@ But if you need reusable components, like a call to action or a any complex set 
 
 #### That can be rendered like this
 
-    <meta name="author" content="\{\{ author \}\}">
-    <meta name="description" content="\{\{ description \}\}">
-    <meta name="keywords" content="\{\{ keywords \}\}">
+    <meta name="author" content="{{ author }}">
+    <meta name="description" content="{{ description }}">
+    <meta name="keywords" content="{{ keywords }}">
 
 ---
 
@@ -221,10 +221,7 @@ together with the rest of this blog.
 		    return readDictionaryOrFile(key, dictionary, config.inputPath);
 	    });
 
-	    // support escaped backslashes, for example \{\{ is replaced by {{
-	    const escapedOpenBraces = /\\\{\\\{/g;
-	    const escapedCloseBraces = /\\\}\\\}/g;
-	    return text.replace(escapedOpenBraces, "{{").replace(escapedCloseBraces, "}}");
+	    return text;
     }
 
     function readDictionaryOrFile(key, dictionary) {
